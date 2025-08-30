@@ -1,0 +1,159 @@
+<!doctype html>
+<html>
+<head>
+    <title>PLEV 위험지역 알림</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <style>
+        body {
+            margin:0;
+            display: flex;
+            font-family: sans-serif;
+        }
+        #map {
+            flex: 2;
+            height: 100vh;
+        }
+        #sidebar {
+            flex: 1;
+            background: #f8f9fa;
+            padding: 20px;
+            box-shadow: -2px 0px 5px rgba(0,0,0,0.1);
+        }
+        #sidebar h2 {
+            margin-top: 0;
+            font-size: 18px;
+            color: #333;
+        }
+        .form-group { margin-bottom: 15px; }
+        input {
+            width: 100%;
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border: none;
+            border-radius: 5px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover { background: #0056b3; }
+
+        #alertBox {
+            position: fixed;
+            top: -60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: red;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: top 0.5s ease;
+            z-index: 9999;
+        }
+        #alertBox.show {
+            top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="alertBox"></div>
+    <div id="map"></div>
+    <div id="sidebar">
+        <h2>🚲 PLEV 위험지역 안내</h2>
+        <div class="form-group">
+            <label>출발지</label>
+            <input type="text" id="start" placeholder="예: 인천대입구역">
+        </div>
+        <div class="form-group">
+            <label>도착지</label>
+            <input type="text" id="end" placeholder="예: 송도컨벤시아">
+        </div>
+        <button onclick="searchRoute()">경로 검색</button>
+        <hr>
+        <div id="info">📍 경로 및 위험지역 정보가 여기 표시됩니다.</div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        function showAlert(message){
+            let alertBox = document.getElementById("alertBox");
+            alertBox.innerText = message;
+            alertBox.classList.add("show");
+            setTimeout(() => {
+                alertBox.classList.remove("show");
+            }, 3000);
+        }
+
+        var map = L.map('map').setView([37.3826, 126.6560], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        var myMarker = null;
+        var isMapCentered = false;
+
+        function sendMyLocation(lat, lon){
+            fetch('/location', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ latitude: lat, longitude: lon })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.alert){
+                    showAlert("🚨 위험지역 100m 이내에 진입했습니다!");
+                }
+            });
+        }
+
+        function updateMyLocation(){
+            if(navigator.geolocation){
+                navigator.geolocation.getCurrentPosition(function(pos){
+                    var lat = pos.coords.latitude;
+                    var lon = pos.coords.longitude;
+
+                    if(!isMapCentered){
+                        map.setView([lat, lon], 15);
+                        isMapCentered = true;
+                    }
+                    if(myMarker){
+                        myMarker.setLatLng([lat, lon]);
+                    } else {
+                        myMarker = L.marker([lat, lon]).addTo(map).bindPopup("현재 위치");
+                    }
+
+                    // 서버로 위치 보내기
+                    sendMyLocation(lat, lon);
+                });
+            }
+        }
+        setInterval(updateMyLocation, 3000); // 3초마다 서버 전송
+        updateMyLocation();
+
+        function searchRoute(){
+            let start = document.getElementById("start").value;
+            let end = document.getElementById("end").value;
+            document.getElementById("info").innerHTML =
+                `출발지: ${start}<br>도착지: ${end}<br>🚧 (경로 검색 API 연동 예정)`;
+        }
+
+        function showHotspots(){
+            let danger = JSON.parse('{{ coords|tojson|safe }}');
+            for (let i = 0; i < danger.length; i++) {
+                let d = danger[i];
+                L.marker([d[0], d[1]], {icon: L.icon({
+                    iconUrl: 'https://cdn-icons-png.flaticon.com/512/1201/1201643.png',
+                    iconSize: [25, 25],
+                    iconAnchor: [12, 12]
+                })}).addTo(map).bindPopup("위험지역 #" + (i+1));
+            }
+        }
+        showHotspots();
+    </script>
+</body>
+</html>
